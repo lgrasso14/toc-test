@@ -1,0 +1,237 @@
+---
+title: "predictive model DBP 2024"
+author: "Laura Grasso"
+date: "2024-04-16"
+output: pdf_document
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+
+
+```{r echo = FALSE}
+library(tidyverse)
+library(lubridate)
+library(wqr)
+library(srarr)
+library(ggplot2)
+library(gtools)
+library(kableExtra)
+library(tinytex)
+library(knitr)
+library(reshape2)
+library(fuzzyjoin)
+library(forcats)
+
+
+
+#D1 is the db with data for LRAA Q1 2024
+
+
+parameters <- c("5 Haloacetic acids", "Dichloroacetic acid",
+                      
+                      "Trichloroacetic acid", "Total THMs")
+
+
+
+sites <- c(1101, 1302, 1601, 1701, 1702, 1710, 2401, 2602, 2701,
+           
+           2706,2713,3803, 3901, 3913, 7301,7302)
+
+dummy_plants <- wqr::get_site_info() %>% select(loc_id, service_area) %>% 
+  mutate("loc_id" = as.factor(loc_id))
+
+d1 <- wqr::read_LIMS(site = sites, parameter = parameters,
+                     
+                     project_no = "THM_HAA Monthly",
+                     
+                     start_date = "2023-04-01",end_date = "2024-03-31") %>%
+  
+  separate('date_time', into = c("date", "time"), sep = ' ')%>%
+  
+  filter(!grepl("Duplicate", sample_type)) %>%
+  
+  mutate(date = lubridate::ymd(date),
+         year = lubridate::year(date),
+         quarter = lubridate::quarter(date),
+         month = lubridate::month(date),
+         site = as.factor(site)) %>% 
+  left_join(dummy_plants, by = c("site" = "loc_id")) %>%
+  #changing site from numeric to factor 
+  mutate("site" = factor(site, levels= sort(unique(site))))
+```
+
+
+```{r echo = FALSE}
+
+
+d2 <-  wqr::read_LIMS(site = sites, parameter = parameters,
+                      
+                      project_no = "THM_HAA Monthly",
+                      
+                      start_date = "2016-01-01",end_date = "2023-12-31") %>%
+  
+  separate('date_time', into = c("date", "time"), sep = ' ')%>%
+  
+  filter(!grepl("Duplicate", sample_type)) %>%
+  
+  mutate(date = lubridate::ymd(date),
+         year = lubridate::year(date),
+         quarter = lubridate::quarter(date),
+         month = lubridate::month(date),
+         site = as.factor(site)) %>% 
+  left_join(dummy_plants, by = c("site" = "loc_id")) %>%
+  #changing site from numeric to factor 
+  mutate("site" = factor(site, levels= sort(unique(site)))) 
+
+
+
+```
+
+
+```{r echo = FALSE}
+  rand_distr_grouped1 <- map_dfr(1:1000, ~{
+    
+    # d1sub <- d1s %>% filter(site == 1101) 
+    act_df <- d1 %>% 
+      group_by(site, year, quarter, parameter) %>% 
+      summarise("Qavg" = mean(result, na.rm = TRUE), .groups = "keep") %>% 
+      ungroup()
+    
+    est_df <- d2 %>% 
+      group_by(site, quarter, parameter) %>% 
+      summarize(
+        Qavg = sample(result, 1)
+      ) %>% 
+      filter(quarter != 1) %>% 
+      mutate(year = 2024) %>% 
+      ungroup()
+    
+    out_df <- bind_rows(act_df, est_df) %>% 
+      arrange(site, year, quarter, parameter) %>% 
+      group_by(site) %>% 
+      mutate(
+        lraa = (lag(Qavg, 3) + lag(Qavg, 2) + lag(Qavg, 1) + Qavg)/4
+      ) %>% 
+      filter(!is.na(lraa)) %>% 
+      mutate(iteration = .x)
+    
+    return(out_df)
+    
+  })
+    
+```
+
+
+
+# TTHMS
+
+
+```{r}
+   rand_distr_grouped1 %>% filter(parameter == "Total THMs") %>% ggplot(aes(site, lraa)) +
+    
+      ggtitle("TTHMs Prediction") +
+      
+      geom_hline(yintercept = 80, linetype = "dashed", color =  "red") +
+
+     geom_boxplot() + facet_wrap(vars(quarter)) + theme_bw()  +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1), 
+            plot.title = element_text(hjust = 0.5))
+```
+
+
+# HAA5
+
+```{r}
+
+    rand_distr_grouped1 %>% filter(parameter == "5 Haloacetic acids") %>% ggplot(aes(site, lraa)) +
+      
+      ggtitle("HAA5 Prediction") +
+      
+      geom_hline(yintercept = 60, linetype = "dashed", color =  "red") +
+      
+      
+      geom_boxplot() + facet_wrap(vars(quarter)) + theme_bw() +
+  
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1), 
+            plot.title = element_text(hjust = 0.5))
+    
+```
+
+
+
+# TCAA
+
+```{r}
+ rand_distr_grouped1 %>% filter(parameter == "Trichloroacetic acid") %>% ggplot(aes(site, lraa)) +
+      
+      ggtitle("TCAA Prediction") +
+      
+      geom_hline(yintercept = 30, linetype = "dashed", color =  "red") +
+      
+      
+      geom_boxplot() + facet_wrap(vars(quarter)) + theme_bw() +
+  
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1), 
+            plot.title = element_text(hjust = 0.5))
+    
+```
+
+
+
+# DCAA
+
+```{r}
+
+
+    rand_distr_grouped1 %>% filter(parameter == "Trichloroacetic acid") %>% ggplot(aes(site, lraa)) +
+      
+      ggtitle("DCAA Prediction") +
+      
+      geom_hline(yintercept = 20, linetype = "dashed", color =  "red") +
+      
+      
+      geom_boxplot() + facet_wrap(vars(quarter)) + theme_bw()  
+    
+    
+    
+    
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
